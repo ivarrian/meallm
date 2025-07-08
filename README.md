@@ -1,4 +1,4 @@
-![meallm-small](/meallm-logo-small.png "mealLM")
+![meallm-small](/meallm-logo-small-yellow.png "mealLM")
 
 mealLM
 =======
