@@ -28,60 +28,75 @@ todoist_params = {
 # Playwright server configuration
 playwright_params = {"command": "npx", "args": ["-y", "@playwright/mcp@latest"]}
 
-mcp_server_params = [public_holiday_params, todoist_params, playwright_params]
+mcp_server_params = [public_holiday_params, playwright_params]
 
 
-class Recipe(BaseModel):
-    name_of_recipe: str
-    description: str
-    cook_time: str
-    total_time: str
-    recipe_category: str
-    recipe_ingredients: List[str]
+# class Recipe(BaseModel):
+#     recipe_url: str
+#     name_of_recipe: str
+#     description: str
+#     cook_time: str
+#     total_time: str
+#     recipe_category: str
+#     recipe_ingredients: List[str]
 
+class BaseIngredient(BaseModel):
+    ingredient_name: str
 
-class RecipesOutput(BaseModel):
-    recipes: List[Recipe]
+class BaseIngredients(BaseModel):
+    ingredients: List[BaseIngredient]
 
+class PublicHolidays(BaseModel):
+    monday: bool
+    tuesday: bool
+    wednesday: bool
+    thursday: bool
+    friday: bool
 
 async def main():
-    """
-    Main asynchronous function to run the meal planning agent.
-    """
-    instructions = f"""
-    You receive input from the user for the types of recipes they would like to make for the week. Generate a recipe per working day of the week, do not generate a recipe for a public holiday in Victoria, Australia. 
-    You have internet access and all recipes must be from the following websites : 
-    https://hot-thai-kitchen.com/ 
 
-The current datetime is {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    public_holiday_instructions = f"""
+    You use the get_dates tools to determine what days of the week is a public holiday in Victoria, Australia.
+    The current datetime is {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+"""
+    
+
+    ingredient_extractor_instructions = f"""
+    You receive input from the user for the types of recipes they would like to make for the week. 
+    Extract the list of base ingredients from the request and return the output . After you have extracted the ingredients, you handoff to the Public Holiday Agent
 """
 
     # Use AsyncExitStack to manage the lifecycle of all servers
     async with AsyncExitStack() as stack:
         # For each server, call its connect() method, which returns
         # the context manager that we then enter.
-        
-        mcp_servers = [await stack.enter_async_context(MCPServerStdio(params)) for params in mcp_server_params]
-        # Now that all servers are connected, initialize the agent
-        meal_planner = Agent(
-            name="MealPlanner",
-            instructions=instructions,
+
+        public_holiday_mcp_servers = [await stack.enter_async_context(MCPServerStdio(public_holiday_params))]
+        public_holiday_agent = Agent(
+            name="PublicHolidayAgent",
+            instructions=public_holiday_instructions,
             model="gpt-4o-mini",
-            mcp_servers=mcp_servers,
-            output_type=RecipesOutput,
+            mcp_servers = public_holiday_mcp_servers,
+            output_type=PublicHolidays,
+        )
+        
+        # mcp_servers = [await stack.enter_async_context(MCPServerStdio(params)) for params in mcp_server_params]
+        # Now that all servers are connected, initialize the agent
+        ingredient_extractor_agent = Agent(
+            name="IngredientExtractor",
+            instructions=ingredient_extractor_instructions,
+            model="gpt-4o-mini",
+            # mcp_servers=mcp_servers,
+            output_type=BaseIngredients,
+            handoffs=[public_holiday_agent]
         )
 
         # Define the user's request
-        request = "I would like to make recipes this week that use chicken, beef and pork and gochujang"
+        request = "I would like to make at least one vegetarian recipe and others could be with chicken or fish"
 
         # Trace the execution of the agent
-        with trace(meal_planner.name):
-            result = await Runner.run(meal_planner, request)
-
-        # Print the final output
-        print("--- Agent's Final Output ---")
-        print(result.final_output.model_dump_json)
-
+        with trace(ingredient_extractor_agent.name):
+            result = await Runner.run(ingredient_extractor_agent, request)
         
 
 
